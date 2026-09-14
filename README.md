@@ -1,5 +1,5 @@
 #  Image booru Tagger
-  <img alt="Image" src="https://github.com/user-attachments/assets/7296825c-62ff-4824-98cc-1bfb8a2a6083" />
+ <img alt="Image" src="https://github.com/user-attachments/assets/851721c4-4335-45b5-b5f2-26156eb3a231" />
 
 
 # Video Scanner
@@ -7,8 +7,7 @@ Performance: The default `BATCH_SIZE` is 16. Increasing it to 32 or 64 may impro
 <details>
   <summary>Spoiler</summary>
   
-  <img width="839" height="624" alt="Image" src="https://github.com/user-attachments/assets/78abb1f9-1722-442b-a2d2-e9e1b1e01cb4" />
-  
+<img alt="Image" src="https://github.com/user-attachments/assets/7aa8333a-d829-4a09-b1e7-13a971ae5376" />  
 
   </details>
   
