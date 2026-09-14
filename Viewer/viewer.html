@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JSON Booru Viewer</title>
+<style>
+  /* === MangaDex-inspired clean style === */
+ 
+  body {
+    margin: 0; font-family: 'Roboto', sans-serif;
+    background: #1a1a1a; color: #eee;
+    display: flex; height: 100vh; overflow: hidden;
+  }
+  #sidebar {
+    width: 280px; background: #2c2c2c; border-right: 2px solid #444;
+    display: flex; flex-direction: column;
+    padding: 15px;
+  }
+  #sidebar h1 {
+    font-weight: 600; font-size: 1.5rem; margin: 0 0 15px 0;
+    color: #ff7eb9;
+  }
+  #tagSearch {
+    padding: 8px; border: none; border-radius: 5px;
+    font-size: 1rem; margin-bottom: 10px;
+    background: #444; color: #eee;
+    outline: none;
+    transition: background-color 0.2s ease;
+  }
+  #tagSearch:focus {
+    background: #555;
+  }
+  #tagsList {
+    flex-grow: 1; overflow-y: auto;
+    border-top: 1px solid #444; padding-top: 10px;
+  }
+  #tagsList li {
+    list-style: none; padding: 6px 8px; cursor: pointer;
+    border-radius: 4px;
+    user-select: none;
+  }
+  #tagsList li:hover,
+  #tagsList li.selected {
+    background: #ff7eb9; color: #1a1a1a; font-weight: 600;
+  }
+
+  #main {
+    flex-grow: 1; display: flex; flex-direction: column;
+    background: #121212; padding: 10px;
+  }
+  #imageGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+    overflow-y: auto;
+    flex-grow: 1;
+  }
+  .imageCard {
+    background: #222; border-radius: 8px;
+    box-shadow: 0 0 5px rgba(255, 126, 185, 0.4);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+  }
+  .imageCard:hover {
+    transform: scale(1.05);
+  }
+  .imageCard img {
+    width: 100%; height: 160px;
+    object-fit: cover;
+    border-bottom: 1px solid #444;
+    background: #333;
+  }
+  .imageTags {
+    font-size: 0.75rem;
+    padding: 6px 8px;
+    color: #ccc;
+    flex-grow: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #pagination {
+    margin-top: 8px;
+    text-align: center;
+  }
+  #pagination button {
+    background: #2c2c2c; border: none; color: #eee;
+    margin: 0 4px; padding: 6px 12px; border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background-color 0.2s ease;
+  }
+  #pagination button:hover:not(:disabled) {
+    background: #ff7eb9;
+    color: #1a1a1a;
+  }
+  #pagination button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  #loading {
+    color: #ff7eb9;
+    text-align: center;
+    margin: 10px 0;
+  }
+  #tagsList li.nsfw-tag {
+  color: #ff4d4d;
+  font-weight: 700;
+}
+
+#tagsList li.nsfw-tag:hover,
+#tagsList li.nsfw-tag.selected {
+  background: #d32f2f;
+  color: #fff;
+}
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>Tags</h1>
+  <input id="tagSearch" type="text" placeholder="Search tags..." autocomplete="off" />
+  <ul id="tagsList"></ul>
+</div>
+
+<div id="main">
+  <div id="imageGrid"></div>
+  <div id="loading" style="display:none;">Loading...</div>
+  <div id="pagination"></div>
+</div>
+
+<script>
+(() => {
+  const JSON_FILE = 'tags_results.json'; // Put your JSON file in the same dir
+	const MAIN_FOLDER = "images/"
+  const PAGE_SIZE = 30;
+  let allData = {};  // { 'imagepath': [['tag', score], ...] }
+  let tagIndex = {}; // { tagName: Set(imagePaths) }
+  let filteredImages = [];
+  let currentPage = 1;
+	const NSFW_TAGS = new Set([
+  'nsfw',
+  'nudity',
+  'nude',
+  'nipples',
+  'breasts',
+  'pussy',
+  'penis',
+  'vagina',
+  'sex',
+  'hetero',
+  'panties',
+  'pantyshot',
+  'underwear',
+  'porn',
+  'explicit'
+]);
+  const tagsListEl = document.getElementById('tagsList');
+  const tagSearchEl = document.getElementById('tagSearch');
+  const imageGridEl = document.getElementById('imageGrid');
+  const paginationEl = document.getElementById('pagination');
+  const loadingEl = document.getElementById('loading');
+
+  // Fetch and load JSON data
+  async function loadData() {
+    loadingEl.style.display = 'block';
+    try {
+      const res = await fetch(JSON_FILE);
+      if (!res.ok) throw new Error('Failed to load JSON');
+      allData = await res.json();
+      buildTagIndex();
+      renderTagsList();
+      filteredImages = Object.keys(allData);
+      renderPage(1);
+    } catch(e) {
+      loadingEl.textContent = 'Error loading data: ' + e.message;
+    } finally {
+      loadingEl.style.display = 'none';
+    }
+  }
+
+  // Build tag index for fast searching
+  function buildTagIndex() {
+    tagIndex = {};
+    for (const [image, tags] of Object.entries(allData)) {
+      for (const [tag] of tags) {
+        if (!tagIndex[tag]) tagIndex[tag] = new Set();
+        tagIndex[tag].add(image);
+      }
+    }
+  }
+
+  // Render tag list to sidebar
+function renderTagsList(filter = '') {
+  const filterLower = filter.toLowerCase();
+  tagsListEl.innerHTML = '';
+
+  const filteredTags = Object.keys(tagIndex)
+    .filter(t => t.toLowerCase().includes(filterLower));
+
+  // NSFW tags first, then normal tags.
+  filteredTags.sort((a, b) => {
+    const aNsfw = NSFW_TAGS.has(a);
+    const bNsfw = NSFW_TAGS.has(b);
+
+    if (aNsfw && !bNsfw) return -1;
+    if (!aNsfw && bNsfw) return 1;
+
+    // Within each group, sort by popularity.
+    return tagIndex[b].size - tagIndex[a].size;
+  });
+
+  for (const tag of filteredTags) {
+    const li = document.createElement('li');
+
+    li.textContent = tag;
+    li.dataset.tag = tag;
+
+    // Red styling for NSFW tags.
+    if (NSFW_TAGS.has(tag)) {
+      li.classList.add('nsfw-tag');
+    }
+
+    // Preserve selected state after re-render/search.
+    if (selectedTags.has(tag)) {
+      li.classList.add('selected');
+    }
+
+    li.addEventListener('click', () => {
+      toggleTagSelection(tag, li);
+    });
+
+    tagsListEl.appendChild(li);
+  }
+}
+
+
+  let selectedTags = new Set();
+
+  function toggleTagSelection(tag, liElement) {
+    if (selectedTags.has(tag)) {
+      selectedTags.delete(tag);
+      liElement.classList.remove('selected');
+    } else {
+      selectedTags.add(tag);
+      liElement.classList.add('selected');
+    }
+    filterImagesByTags();
+  }
+
+  // Filter images by selected tags (AND condition)
+  function filterImagesByTags() {
+    if (selectedTags.size === 0) {
+      filteredImages = Object.keys(allData);
+    } else {
+      const tagsArr = [...selectedTags];
+      filteredImages = [...tagIndex[tagsArr[0]]];
+      for(let i=1; i<tagsArr.length; i++) {
+        const tagSet = tagIndex[tagsArr[i]];
+        filteredImages = filteredImages.filter(img => tagSet.has(img));
+      }
+    }
+    currentPage = 1;
+    renderPage(currentPage);
+  }
+
+  // Render images of current page
+  function renderPage(page) {
+    imageGridEl.innerHTML = '';
+    const totalPages = Math.ceil(filteredImages.length / PAGE_SIZE);
+    if (page < 1 || page > totalPages) return;
+
+    currentPage = page;
+    const start = (page-1)*PAGE_SIZE;
+    const end = start + PAGE_SIZE;
+    const pageImages = filteredImages.slice(start, end);
+
+    for (const imgPath of pageImages) {
+  const tagsForImg = allData[imgPath].map(t => t[0]).join(', ');
+  const card = document.createElement('div');
+  card.className = 'imageCard';
+
+  const imgFullPath = MAIN_FOLDER + imgPath;
+  console.log(imgFullPath);
+  const link = document.createElement('a');
+  link.href = imgFullPath;
+  link.target = '_blank'; // Open in new tab
+  link.rel = 'noopener noreferrer';
+
+  const img = document.createElement('img');
+  img.loading = 'lazy';
+  img.src = imgFullPath;
+  img.alt = tagsForImg;
+
+  const tagDiv = document.createElement('div');
+  tagDiv.className = 'imageTags';
+  tagDiv.textContent = tagsForImg;
+
+  link.appendChild(img);
+  card.appendChild(link);
+  card.appendChild(tagDiv);
+
+  card.title = imgPath;
+  imageGridEl.appendChild(card);
+}
+
+    renderPagination(totalPages);
+  }
+
+  // Render pagination buttons
+  function renderPagination(totalPages) {
+    paginationEl.innerHTML = '';
+    if (totalPages <= 1) return;
+
+    const prevBtn = document.createElement('button');
+    prevBtn.textContent = 'Prev';
+    prevBtn.disabled = currentPage === 1;
+    prevBtn.onclick = () => renderPage(currentPage - 1);
+	 const nextBtn = document.createElement('button');
+    nextBtn.textContent = 'Next';
+    nextBtn.disabled = currentPage === totalPages;
+    nextBtn.onclick = () => renderPage(currentPage + 1);
+
+    paginationEl.appendChild(prevBtn);
+
+    // Show page numbers near current page (for brevity)
+    const pageButtonsToShow = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(pageButtonsToShow / 2));
+    let endPage = Math.min(totalPages, startPage + pageButtonsToShow - 1);
+
+    if (endPage - startPage < pageButtonsToShow - 1) {
+      startPage = Math.max(1, endPage - pageButtonsToShow + 1);
+    }
+
+    for (let p = startPage; p <= endPage; p++) {
+      const btn = document.createElement('button');
+      btn.textContent = p;
+      if (p === currentPage) {
+        btn.disabled = true;
+        btn.style.background = '#ff7eb9';
+        btn.style.color = '#1a1a1a';
+      }
+      btn.onclick = () => renderPage(p);
+      paginationEl.appendChild(btn);
+    }
+
+    paginationEl.appendChild(nextBtn);
+  }
+
+  // Handle search input with debounce for autocomplete filtering
+  let debounceTimeout;
+  tagSearchEl.addEventListener('input', () => {
+    clearTimeout(debounceTimeout);
+    debounceTimeout = setTimeout(() => {
+      const val = tagSearchEl.value.trim().toLowerCase();
+      renderTagsList(val);
+    }, 150);
+  });
+
+  // Load on start
+  loadData();
+})();
+</script>
+
+</body>
+</html>
