@@ -1,5 +1,5 @@
 #  Image booru Tagger
- <img alt="Image" src="https://github.com/user-attachments/assets/851721c4-4335-45b5-b5f2-26156eb3a231" />
+<img alt="Image" src="https://github.com/user-attachments/assets/9d2f68a6-71c4-486c-a2c4-9b993e3551c9" />
 
 
 # Video Scanner
